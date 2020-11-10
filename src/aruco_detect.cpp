@@ -65,6 +65,85 @@
 using namespace std;
 using namespace cv;
 
+static unsigned char COMPETITION_MARKERS_5X5_20_BYTES[][4][4] =
+    {{
+         //leg1
+         {222, 235, 255, 1},
+         {254, 207, 191, 1},
+         {255, 235, 189, 1},
+         {254, 249, 191, 1},
+     },
+     {
+         //leg2
+         {222, 234, 110, 1},
+         {238, 143, 158, 1},
+         {187,  43, 189, 1},
+         {188, 248, 187, 1},
+     },
+     {
+         //leg3
+         {222, 235, 107, 0},
+         {230, 207, 143, 1},
+         {107, 107, 189, 1},
+         {248, 249, 179, 1},
+     },
+     {
+         //leg4l
+         {222, 234, 250, 0},
+         {246, 143, 174, 1},
+         {47, 171, 189, 1},
+         {186, 248, 183, 1},
+     },
+     {
+         //leg4r
+         {222, 234, 231, 0},
+         {230, 207, 190, 0},
+         {115, 171, 189, 1},
+         {62, 249, 179, 1},
+     },
+     {
+         //leg5l
+         {222, 235, 118, 0},
+         {246, 143, 159, 0},
+         {55, 107, 189, 1},
+         {124, 248, 183, 1},
+     },
+     {
+         //leg5r
+         {222, 234, 115, 1},
+         {254, 207, 142, 0},
+         {231, 43, 189, 1},
+         {56, 249, 191, 1},
+     },
+     {
+         //leg6l
+         {222, 235, 226, 1},
+         {238, 143, 175, 0},
+         {163, 235, 189, 1},
+         {122, 248, 187, 1},
+     },
+     {
+         //leg6r
+         {222, 234, 95, 0},
+         {246, 79, 158, 1},
+         {125, 43, 189, 1},
+         {188, 249, 55, 1},
+     },
+     {
+         //leg7l
+         {222, 235, 206, 0},
+         {230, 15, 191, 1},
+         {57, 235, 189, 1},
+         {254, 248, 51, 1},
+     },
+     {
+         //leg7r
+         {222, 234, 203, 1},
+         {238, 79, 174, 1},
+         {233, 171, 189, 1},
+         {186, 249, 59, 1},
+     }};
+
 class FiducialsNode {
   private:
     ros::Publisher * vertices_pub;
@@ -74,7 +153,6 @@ class FiducialsNode {
     ros::Subscriber ignore_sub;
     image_transport::ImageTransport it;
     image_transport::Subscriber img_sub;
-    tf2_ros::TransformBroadcaster broadcaster;
 
     ros::ServiceServer service_enable_detections;
 
@@ -86,8 +164,6 @@ class FiducialsNode {
 
     bool doPoseEstimation;
     bool haveCamInfo;
-    bool publishFiducialTf;
-
     cv::Mat cameraMatrix;
     cv::Mat distortionCoeffs;
     int frameNum;
@@ -320,7 +396,7 @@ void FiducialsNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
         return; //return without doing anything
     }
 
-    ROS_INFO("Got image %d", msg->header.seq);
+    //ROS_INFO("Got image %d", msg->header.seq);
     frameNum++;
 
     cv_bridge::CvImagePtr cv_ptr;
@@ -332,7 +408,7 @@ void FiducialsNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
 
     fiducial_msgs::FiducialArray fva;
     fva.header.stamp = msg->header.stamp;
-    fva.header.frame_id = frameId;
+    fva.header.frame_id =frameId;
     fva.image_seq = msg->header.seq;
 
     try {
@@ -343,7 +419,9 @@ void FiducialsNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
         vector <Vec3d>  rvecs, tvecs;
 
         aruco::detectMarkers(cv_ptr->image, dictionary, corners, ids, detectorParams);
-        ROS_INFO("Detected %d markers", (int)ids.size());
+        if ((int)ids.size() > 0) {
+            ROS_INFO("Detected %d markers", (int)ids.size());
+        }
 
         for (size_t i=0; i<ids.size(); i++) {
 	    if (std::count(ignoreIds.begin(), ignoreIds.end(), ids[i]) != 0) {
@@ -426,16 +504,6 @@ void FiducialsNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
                     (norm(tvecs[i]) / fiducial_len);
 
                 fta.transforms.push_back(ft);
-
-                // Publish tf for the fiducial relative to the camera
-                if (publishFiducialTf) {
-                    geometry_msgs::TransformStamped ts;
-                    ts.transform = ft.transform;
-                    ts.header.frame_id = frameId;
-                    ts.header.stamp = msg->header.stamp;
-                    ts.child_frame_id = "fiducial_" + std::to_string(ft.fiducial_id);
-                    broadcaster.sendTransform(ts);
-                }
             }
             pose_pub->publish(fta);
         }
@@ -524,7 +592,6 @@ FiducialsNode::FiducialsNode() : nh(), pnh("~"), it(nh)
     pnh.param<double>("fiducial_len", fiducial_len, 0.14);
     pnh.param<int>("dictionary", dicno, 7);
     pnh.param<bool>("do_pose_estimation", doPoseEstimation, true);
-    pnh.param<bool>("publish_fiducial_tf", publishFiducialTf, true);
 
     std::string str;
     std::vector<std::string> strs;
@@ -577,7 +644,19 @@ FiducialsNode::FiducialsNode() : nh(), pnh("~"), it(nh)
 
     pose_pub = new ros::Publisher(nh.advertise<fiducial_msgs::FiducialTransformArray>("fiducial_transforms", 1));
 
-    dictionary = aruco::getPredefinedDictionary(dicno);
+    //dictionary = aruco::getPredefinedDictionary(7);
+
+    static const aruco::Dictionary COMPETITION_MARKERS = aruco::Dictionary(
+        Mat(
+            11,
+            (5 * 5 + 7) / 8,
+            CV_8UC4,
+            (uchar *)COMPETITION_MARKERS_5X5_20_BYTES),
+        5,
+        3);
+
+    dictionary = makePtr<aruco::Dictionary>(COMPETITION_MARKERS);
+    
 
     img_sub = it.subscribe("camera", 1,
                         &FiducialsNode::imageCallback, this);
