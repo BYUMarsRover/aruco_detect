@@ -17,7 +17,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 find_package(OpenCV REQUIRED)
-
+message(STATUS "OpenCV include dirs: ${OpenCV_INCLUDE_DIRS}")
 generate_dynamic_reconfigure_options(cfg/DetectorParams.cfg)
 
 catkin_package(INCLUDE_DIRS DEPENDS OpenCV)
