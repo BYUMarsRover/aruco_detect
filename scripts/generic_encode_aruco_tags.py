@@ -5,9 +5,8 @@ import csv
 import sys
 import os
 import numpy as np
-
-# This encoding file only works for 5x5 tags.
-GRID_SIZE = (5, 5)
+import cv2 as cv
+import cv2.aruco as aruco
 
 def main():
     tag_defs, file_names = parse_input()
